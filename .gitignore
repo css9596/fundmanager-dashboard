@@ -1,0 +1,26 @@
+# 환경/비밀
+.env
+*.env
+logs/.kis_token.json
+.kis_token.json
+
+# 로그 (대시보드용 web/data만 push, 원본 jsonl/로그는 미공개)
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp

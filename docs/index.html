@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FundManager Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #1a1d24;
+    --border: #2a2f3a;
+    --text: #e8eaed;
+    --muted: #9aa0a6;
+    --green: #34d399;
+    --red: #f87171;
+    --blue: #60a5fa;
+    --yellow: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 20px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .card h2 { font-size: 13px; color: var(--muted); margin-bottom: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat { font-size: 28px; font-weight: 600; }
+  .stat.green { color: var(--green); }
+  .stat.red { color: var(--red); }
+  .stat.blue { color: var(--blue); }
+  .stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .full-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; margin-bottom: 16px;
+  }
+  .full-card h2 { font-size: 14px; margin-bottom: 12px; }
+  canvas { max-height: 320px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; }
+  td.buy { color: var(--green); }
+  td.sell { color: var(--red); }
+  td.hold { color: var(--muted); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .pill.buy { background: rgba(52, 211, 153, 0.15); color: var(--green); }
+  .pill.sell { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+  .pill.hold { background: rgba(154, 160, 166, 0.15); color: var(--muted); }
+  .footer { color: var(--muted); font-size: 11px; text-align: center; margin-top: 20px; }
+</style>
+</head>
+<body>
+  <h1>📊 FundManager Dashboard</h1>
+  <p class="subtitle" id="lastUpdate">로딩 중...</p>
+
+  <!-- 요약 카드 -->
+  <div class="grid" id="summary">
+    <div class="card"><h2>봇 상태</h2><div class="stat" id="statusValue">—</div><div class="stat-sub" id="statusSub"></div></div>
+    <div class="card"><h2>누적 결정 수</h2><div class="stat blue" id="decisionCount">—</div><div class="stat-sub" id="decisionSub"></div></div>
+    <div class="card"><h2>백테스트 수익률</h2><div class="stat" id="btReturn">—</div><div class="stat-sub" id="btSub"></div></div>
+    <div class="card"><h2>승률</h2><div class="stat" id="winRate">—</div><div class="stat-sub" id="winSub"></div></div>
+  </div>
+
+  <!-- 가격 + 결정 마커 -->
+  <div class="full-card">
+    <h2>최근 가격 & 결정</h2>
+    <canvas id="priceChart"></canvas>
+  </div>
+
+  <!-- 백테스트 자본 곡선 -->
+  <div class="full-card">
+    <h2>백테스트 자본 곡선 (30일)</h2>
+    <canvas id="equityChart"></canvas>
+  </div>
+
+  <!-- 액션 분포 + 신뢰도 -->
+  <div class="grid">
+    <div class="card">
+      <h2>액션 분포</h2>
+      <canvas id="actionChart" style="max-height:200px"></canvas>
+    </div>
+    <div class="card">
+      <h2>전략별 결정 수</h2>
+      <canvas id="strategyChart" style="max-height:200px"></canvas>
+    </div>
+  </div>
+
+  <!-- 최근 결정 테이블 -->
+  <div class="full-card">
+    <h2>최근 결정 (최대 20건)</h2>
+    <table id="decisionsTable">
+      <thead><tr><th>시각</th><th>종목</th><th>전략</th><th>액션</th><th>신뢰도</th><th>가격</th><th>RSI</th><th>이유</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- 백테스트 거래 -->
+  <div class="full-card">
+    <h2>백테스트 매매 내역</h2>
+    <table id="tradesTable">
+      <thead><tr><th>#</th><th>방향</th><th>가격</th><th>금액</th><th>손익</th><th>이유</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <p class="footer">FundManager • 데이터는 봇 컴퓨터에서 주기적으로 push됨</p>
+
+<script>
+const fmt = n => Number(n).toLocaleString("ko-KR", { maximumFractionDigits: 0 });
+const fmtPct = n => (n >= 0 ? "+" : "") + Number(n).toFixed(2) + "%";
+
+async function loadJSON(path) {
+  try {
+    const r = await fetch(path + "?t=" + Date.now());
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+function setLastUpdate(status) {
+  const t = status && status.last_update ? new Date(status.last_update).toLocaleString("ko-KR") : "—";
+  document.getElementById("lastUpdate").textContent = "마지막 업데이트: " + t;
+}
+
+function renderSummary(status, backtest) {
+  if (status) {
+    document.getElementById("statusValue").textContent = status.bot_running ? "ACTIVE" : "STOPPED";
+    document.getElementById("statusValue").classList.add(status.bot_running ? "green" : "red");
+    document.getElementById("statusSub").textContent = status.strategy ? `전략: ${status.strategy}` : "";
+    document.getElementById("decisionCount").textContent = fmt(status.total_decisions || 0);
+    document.getElementById("decisionSub").textContent = status.first_ts ? `${new Date(status.first_ts).toLocaleDateString()}~` : "";
+  }
+  if (backtest) {
+    const ret = backtest.summary.return_pct;
+    const el = document.getElementById("btReturn");
+    el.textContent = fmtPct(ret);
+    el.classList.add(ret >= 0 ? "green" : "red");
+    document.getElementById("btSub").textContent = `단순보유 ${fmtPct(backtest.summary.buy_hold_return_pct)}`;
+    const win = backtest.summary.win_rate;
+    const winEl = document.getElementById("winRate");
+    winEl.textContent = win != null ? Math.round(win) + "%" : "—";
+    winEl.classList.add((win || 0) >= 50 ? "green" : "red");
+    document.getElementById("winSub").textContent = `거래 ${backtest.summary.total_trades}건`;
+  }
+}
+
+function renderPriceChart(decisions) {
+  const ctx = document.getElementById("priceChart");
+  const sorted = [...(decisions || [])].sort((a,b) => new Date(a.ts) - new Date(b.ts)).slice(-80);
+  if (!sorted.length) return;
+  const labels = sorted.map(d => d.ts.slice(11, 16));
+  const prices = sorted.map(d => d.price);
+  const buys = sorted.map(d => d.action === "buy" ? d.price : null);
+  const sells = sorted.map(d => d.action === "sell" ? d.price : null);
+
+  new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label: "가격", data: prices, borderColor: "#60a5fa", backgroundColor: "rgba(96,165,250,0.1)", borderWidth: 2, pointRadius: 0, tension: 0.3 },
+        { label: "매수", data: buys, borderColor: "transparent", backgroundColor: "#34d399", pointRadius: 6, pointStyle: "triangle", showLine: false },
+        { label: "매도", data: sells, borderColor: "transparent", backgroundColor: "#f87171", pointRadius: 6, pointStyle: "triangle", rotation: 180, showLine: false },
+      ],
+    },
+    options: { plugins: { legend: { labels: { color: "#e8eaed" } } }, scales: { x: { ticks: { color: "#9aa0a6" }, grid: { color: "#2a2f3a" } }, y: { ticks: { color: "#9aa0a6", callback: v => fmt(v) }, grid: { color: "#2a2f3a" } } } },
+  });
+}
+
+function renderEquityChart(backtest) {
+  const ctx = document.getElementById("equityChart");
+  if (!backtest || !backtest.equity_curve || !backtest.equity_curve.length) return;
+  const labels = backtest.equity_curve.map(e => e[0]);
+  const data = backtest.equity_curve.map(e => e[1]);
+  new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: [{ label: "자본", data, borderColor: "#fbbf24", backgroundColor: "rgba(251,191,36,0.1)", borderWidth: 2, pointRadius: 0, fill: true, tension: 0.2 }] },
+    options: { plugins: { legend: { labels: { color: "#e8eaed" } } }, scales: { x: { display: false }, y: { ticks: { color: "#9aa0a6", callback: v => fmt(v) }, grid: { color: "#2a2f3a" } } } },
+  });
+}
+
+function renderDistributionCharts(status) {
+  if (!status) return;
+  if (status.by_action) {
+    new Chart(document.getElementById("actionChart"), {
+      type: "doughnut",
+      data: { labels: Object.keys(status.by_action), datasets: [{ data: Object.values(status.by_action), backgroundColor: ["#34d399","#f87171","#9aa0a6"] }] },
+      options: { plugins: { legend: { labels: { color: "#e8eaed" } } } },
+    });
+  }
+  if (status.by_strategy) {
+    new Chart(document.getElementById("strategyChart"), {
+      type: "doughnut",
+      data: { labels: Object.keys(status.by_strategy), datasets: [{ data: Object.values(status.by_strategy), backgroundColor: ["#60a5fa","#fbbf24"] }] },
+      options: { plugins: { legend: { labels: { color: "#e8eaed" } } } },
+    });
+  }
+}
+
+function renderDecisionsTable(decisions) {
+  const tbody = document.querySelector("#decisionsTable tbody");
+  tbody.innerHTML = "";
+  const recent = [...(decisions || [])].sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 20);
+  for (const d of recent) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${d.ts.slice(5, 16).replace("T"," ")}</td>
+      <td>${d.symbol}</td>
+      <td>${d.strategy}</td>
+      <td><span class="pill ${d.action}">${d.action}</span></td>
+      <td>${(d.confidence*100).toFixed(0)}%</td>
+      <td>${fmt(d.price)}</td>
+      <td>${d.rsi != null ? d.rsi.toFixed(1) : "—"}</td>
+      <td style="color:var(--muted);font-size:11px">${(d.reason||"").slice(0,60)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderTradesTable(backtest) {
+  const tbody = document.querySelector("#tradesTable tbody");
+  tbody.innerHTML = "";
+  if (!backtest || !backtest.trades) return;
+  backtest.trades.slice(-20).reverse().forEach((t, idx) => {
+    const tr = document.createElement("tr");
+    const pnl = t.pnl_pct != null ? fmtPct(t.pnl_pct) : "—";
+    const pnlColor = t.pnl_pct != null ? (t.pnl_pct >= 0 ? "var(--green)" : "var(--red)") : "var(--muted)";
+    tr.innerHTML = `
+      <td>${backtest.trades.length - idx}</td>
+      <td><span class="pill ${t.side}">${t.side}</span></td>
+      <td>${fmt(t.price)}</td>
+      <td>${fmt(t.amount)}</td>
+      <td style="color:${pnlColor}">${pnl}</td>
+      <td style="color:var(--muted);font-size:11px">${(t.reason||"").slice(0,50)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function init() {
+  const [status, decisions, backtest] = await Promise.all([
+    loadJSON("data/status.json"),
+    loadJSON("data/decisions.json"),
+    loadJSON("data/backtest.json"),
+  ]);
+  setLastUpdate(status);
+  renderSummary(status, backtest);
+  renderPriceChart(decisions);
+  renderEquityChart(backtest);
+  renderDistributionCharts(status);
+  renderDecisionsTable(decisions);
+  renderTradesTable(backtest);
+}
+
+init();
+</script>
+</body>
+</html>
