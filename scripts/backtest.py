@@ -26,24 +26,8 @@ INITIAL_KRW = 1_000_000
 
 
 def fetch_crypto(symbol: str, interval: str, count: int) -> pd.DataFrame:
-    """pyupbit는 한 번에 최대 200개. 큰 count는 분할 조회."""
-    if count <= 200:
-        return pyupbit.get_ohlcv(symbol, interval=interval, count=count)
-    chunks = []
-    to = None
-    remaining = count
-    while remaining > 0:
-        n = min(200, remaining)
-        df = pyupbit.get_ohlcv(symbol, interval=interval, count=n, to=to)
-        if df is None or df.empty:
-            break
-        chunks.append(df)
-        to = df.index[0]
-        remaining -= n
-    if not chunks:
-        return pd.DataFrame()
-    out = pd.concat(chunks[::-1]).drop_duplicates().sort_index()
-    return out
+    """pyupbit는 내부적으로 분할 호출을 처리해줌. 단일 호출로 충분."""
+    return pyupbit.get_ohlcv(symbol, interval=interval, count=count)
 
 
 def fetch_stock(symbol: str, count: int) -> pd.DataFrame:
@@ -65,9 +49,10 @@ def fetch_stock(symbol: str, count: int) -> pd.DataFrame:
     return pd.DataFrame(rows[::-1])
 
 
-def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict):
+def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict,
+                 rule_params: dict = None):
     analyzer = TechnicalAnalyzer()
-    rule = RuleBasedDecisionMaker()
+    rule = RuleBasedDecisionMaker(rule_params)
 
     krw = INITIAL_KRW
     position = None   # {"volume", "avg_price", "entry_idx"}
@@ -115,8 +100,11 @@ def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict):
             continue
 
         if action == "buy" and position is None:
-            cap = RISK.get("max_position_krw", 50_000)
-            amount = min(krw * 0.9, cap)
+            position_pct = params.get("position_pct", 0.20)
+            cap = params.get("cap_krw")   # None이면 캡 없음 (백테스트 기본)
+            amount = krw * position_pct
+            if cap:
+                amount = min(amount, cap)
             if amount < TRADING["min_order_krw"]:
                 equity_curve.append((i, _equity(krw, position, price)))
                 continue
