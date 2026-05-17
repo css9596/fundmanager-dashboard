@@ -4,7 +4,7 @@
 logs/.kis_token.json
 .kis_token.json
 
-# 로그 (대시보드용 web/data만 push, 원본 jsonl/로그는 미공개)
+# 로그 (실행 로그는 미공개, 결정 데이터는 data/에 있음)
 logs/
 
 # Python

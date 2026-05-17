@@ -1,0 +1,58 @@
+name: simulate
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # 15분마다 (GitHub 큐 사정에 따라 5~10분 지연 가능)
+  workflow_dispatch:           # 수동 트리거도 가능
+
+# 동시에 여러 잡 돌면 git conflict 나니까 직렬화
+concurrency:
+  group: sim
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run one simulation cycle
+        env:
+          USE_RULE_STRATEGY: "1"
+        run: python scripts/run_one_cycle.py
+
+      - name: Backfill outcomes
+        run: python scripts/backfill_outcomes.py || true
+
+      - name: Export for dashboard
+        run: python scripts/export_for_web.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ docs/
+          if git diff --cached --quiet; then
+            echo "변경 없음 — push 스킵"
+            exit 0
+          fi
+          git commit -m "auto: $(date -u '+%F %T UTC') 시뮬 사이클 + 데이터 갱신"
+          # 다른 잡이 먼저 push했을 수 있으니 rebase 후 push
+          git pull --rebase origin main || true
+          git push origin main

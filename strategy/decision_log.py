@@ -10,7 +10,7 @@ from datetime import datetime
 from threading import Lock
 from typing import Optional
 
-DECISION_LOG_PATH = os.path.join("logs", "decisions.jsonl")
+DECISION_LOG_PATH = os.path.join("data", "decisions.jsonl")
 _lock = Lock()
 
 

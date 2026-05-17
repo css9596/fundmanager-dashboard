@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-LOG_PATH = ROOT / "logs" / "decisions.jsonl"
+LOG_PATH = ROOT / "data" / "decisions.jsonl"
 WEB_DATA = ROOT / "docs" / "data"
 WEB_DATA.mkdir(parents=True, exist_ok=True)
 

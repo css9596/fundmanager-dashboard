@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from strategy.rule_decision import RuleBasedDecisionMaker
 
-LOG_PATH = "logs/decisions.jsonl"
+LOG_PATH = "data/decisions.jsonl"
 
 
 def _load():

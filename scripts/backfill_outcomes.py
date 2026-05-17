@@ -24,7 +24,7 @@ import pandas as pd
 
 from core.kis import KISClient
 
-LOG_PATH = "logs/decisions.jsonl"
+LOG_PATH = "data/decisions.jsonl"
 HORIZONS_MIN = [15, 60, 240]  # 15분 / 1시간 / 4시간
 
 _kis = None
