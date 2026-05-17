@@ -1,6 +1,10 @@
+import json
+import os
 import time
 from datetime import datetime, date
 from config import RISK
+
+DAILY_PNL_PATH = os.path.join("logs", "daily_pnl.json")
 
 
 class RiskManager:
@@ -8,11 +12,37 @@ class RiskManager:
         self.daily_pnl = 0.0
         self.daily_reset_date = date.today()
         self.open_positions: dict = {}  # symbol -> {volume, avg_price, entry_time}
+        self._load_daily_pnl()
+
+    def _load_daily_pnl(self):
+        """봇 재시작 시 daily_pnl 복원 (같은 날이면 이어 누적)."""
+        try:
+            if not os.path.exists(DAILY_PNL_PATH):
+                return
+            with open(DAILY_PNL_PATH) as f:
+                data = json.load(f)
+            saved_date = data.get("date")
+            if saved_date == date.today().isoformat():
+                self.daily_pnl = float(data.get("daily_pnl", 0.0))
+        except Exception:
+            pass
+
+    def _save_daily_pnl(self):
+        try:
+            os.makedirs(os.path.dirname(DAILY_PNL_PATH), exist_ok=True)
+            with open(DAILY_PNL_PATH, "w") as f:
+                json.dump({
+                    "date": self.daily_reset_date.isoformat(),
+                    "daily_pnl": self.daily_pnl,
+                }, f)
+        except Exception:
+            pass
 
     def _reset_daily_if_needed(self):
         if date.today() != self.daily_reset_date:
             self.daily_pnl = 0.0
             self.daily_reset_date = date.today()
+            self._save_daily_pnl()
 
     def can_open_position(self, symbol: str, total_assets: float) -> tuple[bool, str]:
         self._reset_daily_if_needed()
@@ -40,14 +70,14 @@ class RiskManager:
 
     def should_stop_loss(self, symbol: str, current_price: float) -> bool:
         pos = self.open_positions.get(symbol)
-        if not pos:
+        if not pos or not pos.get("avg_price"):
             return False
         loss_pct = (current_price - pos["avg_price"]) / pos["avg_price"]
         return loss_pct <= -RISK["stop_loss_pct"]
 
     def should_take_profit(self, symbol: str, current_price: float) -> bool:
         pos = self.open_positions.get(symbol)
-        if not pos:
+        if not pos or not pos.get("avg_price"):
             return False
         profit_pct = (current_price - pos["avg_price"]) / pos["avg_price"]
         return profit_pct >= RISK["take_profit_pct"]
@@ -67,9 +97,10 @@ class RiskManager:
 
     def close_position(self, symbol: str, exit_price: float):
         pos = self.open_positions.pop(symbol, None)
-        if pos and pos["avg_price"]:
+        if pos and pos.get("avg_price"):
             pnl_pct = (exit_price - pos["avg_price"]) / pos["avg_price"]
             self.daily_pnl += pnl_pct
+            self._save_daily_pnl()
         return pos
 
     def get_position(self, symbol: str) -> dict:
