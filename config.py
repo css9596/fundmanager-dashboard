@@ -33,7 +33,7 @@ RISK = {
 
 # 트레이딩 설정
 TRADING = {
-    "crypto_symbols": ["KRW-ETH", "KRW-XRP", "KRW-ADA"],  # 봇 효과 검증된 3종목
+    "crypto_symbols": ["KRW-BTC", "KRW-ADA", "KRW-SOL"],  # universe_scan 결과 봇 알파 ≥+7%p 종목
     "stock_symbols": ["005930"],            # 삼성전자
     "candle_interval": 15,    # 분봉 (15분)
     "analysis_interval": 900, # 분석 주기 (초)

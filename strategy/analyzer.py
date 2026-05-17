@@ -19,8 +19,9 @@ class TechnicalAnalyzer:
             "trend": self._trend(close),
             "volume_signal": self._volume_signal(volume),
             "support_resistance": self._support_resistance(high, low, close),
+            "atr_pct": self._atr_pct(high, low, close),  # ATR 비율 (변동성)
             "current_price": float(close.iloc[-1]),
-            "price_change_1h": self._price_change(close, 4),   # 4 * 15분 = 1시간
+            "price_change_1h": self._price_change(close, 4),
             "price_change_4h": self._price_change(close, 16),
             "price_change_24h": self._price_change(close, 96),
         }
@@ -118,6 +119,18 @@ class TechnicalAnalyzer:
             "dist_to_resistance_pct": round(dist_to_resistance, 2),
             "dist_to_support_pct": round(dist_to_support, 2),
         }
+
+    def _atr_pct(self, high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
+        """ATR을 현재가 대비 % 로 반환 (변동성 정규화)."""
+        prev_close = close.shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        atr = tr.rolling(period).mean().iloc[-1]
+        cur = float(close.iloc[-1])
+        return round(float(atr) / cur * 100, 3) if cur and atr == atr else 0  # atr==atr → NaN 가드
 
     def _price_change(self, close: pd.Series, periods: int) -> float:
         if len(close) <= periods:

@@ -51,14 +51,34 @@ def fetch_stock(symbol: str, count: int) -> pd.DataFrame:
 
 def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict,
                  rule_params: dict = None, daily_df: pd.DataFrame = None):
+    from strategy.regime import detect_regime, REGIME_OVERRIDES, REGIME_RISK
     analyzer = TechnicalAnalyzer()
-    rule = RuleBasedDecisionMaker(rule_params)
+    base_rule_params = rule_params or {}
     # 익절/손절 동적 오버라이드
-    stop_loss_pct = params.get("stop_loss_pct", RISK["stop_loss_pct"])
-    take_profit_pct = params.get("take_profit_pct", RISK["take_profit_pct"])
-    trailing_pct = params.get("trailing_pct")   # None이면 트레일링 OFF
-    # 다중 타임프레임: 일봉 추세 ↓이면 매수 차단
+    base_sl = params.get("stop_loss_pct", RISK["stop_loss_pct"])
+    base_tp = params.get("take_profit_pct", RISK["take_profit_pct"])
+    trailing_pct = params.get("trailing_pct")
     use_daily_filter = params.get("daily_trend_filter", False) and daily_df is not None
+    regime_aware = params.get("regime_aware", False) and daily_df is not None
+
+    rule = RuleBasedDecisionMaker(base_rule_params)
+    current_regime = "sideways"
+    last_regime_check = None
+
+    def update_regime(ts):
+        nonlocal rule, current_regime, last_regime_check
+        # 일 1회만 감지 (캐싱)
+        check_key = ts.date() if hasattr(ts, "date") else None
+        if check_key == last_regime_check:
+            return
+        last_regime_check = check_key
+        past = daily_df[daily_df.index <= ts] if hasattr(daily_df.index, "__getitem__") else daily_df
+        new_regime = detect_regime(past)
+        if new_regime != current_regime:
+            current_regime = new_regime
+            # rule 인스턴스 재생성 (regime 오버라이드 적용)
+            effective_params = {**base_rule_params, **REGIME_OVERRIDES.get(current_regime, {})}
+            rule = RuleBasedDecisionMaker(effective_params)
 
     krw = INITIAL_KRW
     position = None   # {"volume", "avg_price", "entry_idx"}
@@ -72,6 +92,29 @@ def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict,
         if not indicators:
             continue
         price = float(sub["close"].iloc[-1])
+
+        # regime 갱신 (일 1회)
+        if regime_aware:
+            ts = df.index[i] if hasattr(df.index, "__getitem__") else None
+            if ts is not None:
+                update_regime(ts)
+            regime_risk = REGIME_RISK.get(current_regime, {})
+            stop_loss_pct = regime_risk.get("stop_loss_pct", base_sl)
+            take_profit_pct = regime_risk.get("take_profit_pct", base_tp)
+        else:
+            stop_loss_pct = base_sl
+            take_profit_pct = base_tp
+
+        # ATR 기반 동적 손절/익절 (옵션)
+        atr_mode = params.get("atr_mode")  # None | "sl" | "both"
+        atr_sl_mult = params.get("atr_sl_mult", 2.0)
+        atr_tp_mult = params.get("atr_tp_mult", 5.0)
+        if atr_mode:
+            atr_pct = indicators.get("atr_pct", 0) / 100.0  # % → 비율
+            if atr_pct > 0:
+                stop_loss_pct = max(0.02, min(0.10, atr_pct * atr_sl_mult))
+                if atr_mode == "both":
+                    take_profit_pct = max(0.05, min(0.40, atr_pct * atr_tp_mult))
 
         pos_for_decision = None
         if position:
