@@ -53,6 +53,9 @@ def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict,
                  rule_params: dict = None):
     analyzer = TechnicalAnalyzer()
     rule = RuleBasedDecisionMaker(rule_params)
+    # 익절/손절 동적 오버라이드
+    stop_loss_pct = params.get("stop_loss_pct", RISK["stop_loss_pct"])
+    take_profit_pct = params.get("take_profit_pct", RISK["take_profit_pct"])
 
     krw = INITIAL_KRW
     position = None   # {"volume", "avg_price", "entry_idx"}
@@ -79,13 +82,13 @@ def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict,
         # 손절/익절 우선
         if position:
             profit_pct = (price - position["avg_price"]) / position["avg_price"]
-            if profit_pct <= -RISK["stop_loss_pct"]:
+            if profit_pct <= -stop_loss_pct:
                 _close(position, price, "손절", trades, i)
                 krw += position["volume"] * price * (1 - FEE)
                 position = None
                 equity_curve.append((i, krw))
                 continue
-            if profit_pct >= RISK["take_profit_pct"]:
+            if profit_pct >= take_profit_pct:
                 _close(position, price, "익절", trades, i)
                 krw += position["volume"] * price * (1 - FEE)
                 position = None

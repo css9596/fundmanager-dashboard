@@ -25,18 +25,18 @@ KIS_IS_REAL = os.getenv("KIS_IS_REAL", "false").lower() == "true"
 RISK = {
     "max_position_pct": 0.20,    # 총 자산의 최대 20%를 단일 종목에
     "max_position_krw": 50_000,  # 종목당 절대 금액 상한 (실거래 초기 안전장치)
-    "stop_loss_pct": 0.03,       # 3% 손절
-    "take_profit_pct": 0.06,     # 6% 익절
+    "stop_loss_pct": 0.05,       # 5% 손절 (이전 3%, 매도 신호 무시 전략에 맞춰 여유)
+    "take_profit_pct": 0.15,     # 15% 익절 (이전 6%, 큰 익절 추구)
     "max_daily_loss_pct": 0.05,  # 하루 최대 손실 5%
     "max_open_positions": 3,     # 동시 최대 포지션 수
 }
 
 # 트레이딩 설정
 TRADING = {
-    "crypto_symbols": ["KRW-BTC"],          # 초기 검증: 1종목으로 시작
+    "crypto_symbols": ["KRW-ETH", "KRW-XRP", "KRW-ADA"],  # 봇 효과 검증된 3종목
     "stock_symbols": ["005930"],            # 삼성전자
     "candle_interval": 15,    # 분봉 (15분)
-    "analysis_interval": 900, # AI 분석 주기 (초) - 15분 봉과 맞춤 (비용 절감)
+    "analysis_interval": 900, # 분석 주기 (초)
     "min_order_krw": 5000,   # 최소 주문 금액
 }
 

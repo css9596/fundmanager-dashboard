@@ -19,9 +19,10 @@ def main():
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=90)
+    ap.add_argument("--symbol", default="KRW-BTC")
     args = ap.parse_args()
-    print(f"{args.days}일치 BTC 15m 데이터 로드 중...")
-    df = fetch_crypto("KRW-BTC", "minute15", args.days * 96)
+    print(f"{args.days}일치 {args.symbol} 15m 데이터 로드 중...")
+    df = fetch_crypto(args.symbol, "minute15", args.days * 96)
     print(f"데이터: {len(df)}봉 ({df.index[0]} ~ {df.index[-1]})")
     bnh = (df["close"].iloc[-1] - df["close"].iloc[100]) / df["close"].iloc[100] * 100
     print(f"단순 보유(buy & hold) 수익률: {bnh:+.2f}%\n")
@@ -41,7 +42,7 @@ def main():
     results = []
     for combo in combos:
         params = dict(zip(keys, combo))
-        res = run_backtest(df, "KRW-BTC", "crypto", {"min_confidence": 0.5}, rule_params=params)
+        res = run_backtest(df, args.symbol, "crypto", {"min_confidence": 0.5}, rule_params=params)
         trades = res["trades"]
         sells = [t for t in trades if t["side"] == "sell"]
         wins = [t for t in sells if t.get("pnl_pct", 0) > 0]

@@ -1,12 +1,13 @@
 DEFAULT_PARAMS = {
     # 차단 필터 (None 또는 0이면 끔)
-    "resistance_filter_pct": 1.5,    # 저항선 N% 이내면 매수 차단 (90일 그리드 검증)
-    "downtrend_filter_rsi": None,    # 하락추세 필터 OFF (90일 그리드: +1.08% 최적)
+    # 90일 4종목 sell_threshold_test 결과: "매도신호 무시 + TP=15%" 조합이 +2.18% (최적)
+    "resistance_filter_pct": 3.0,    # 저항선 3% 이내면 매수 차단
+    "downtrend_filter_rsi": None,    # 하락추세 필터 OFF
     "volatility_filter_bw": 0.08,    # 밴드폭 > N 이면 매수 차단
 
     # 임계값
-    "buy_score_threshold": 4,        # 매수 점수 임계
-    "sell_score_threshold": 3,       # 매도 점수 임계
+    "buy_score_threshold": 5,        # 매수: 강한 신호만 (이전 4 → 5)
+    "sell_score_threshold": 99,      # 매도 신호 사실상 무시 → TP/SL로만 종료
 
     # 가중치 (튜닝 가능)
     "w_rsi_strong_oversold": 3,      # RSI < 30
