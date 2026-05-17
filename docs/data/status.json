@@ -1,1 +1,1 @@
-{"last_update": "2026-05-17T17:20:11", "bot_running": true, "total_decisions": 10, "first_ts": "2026-05-17T16:46:50", "last_ts": "2026-05-17T17:07:37", "strategy": "rule", "by_action": {"hold": 10}, "by_strategy": {"ai": 9, "rule": 1}, "by_symbol": {"KRW-BTC": 10}}
+{"last_update": "2026-05-17T08:25:33", "bot_running": false, "total_decisions": 13, "first_ts": "2026-05-17T16:46:50", "last_ts": "2026-05-17T08:25:32", "strategy": "rule", "by_action": {"hold": 13}, "by_strategy": {"ai": 9, "rule": 4}, "by_symbol": {"KRW-BTC": 13}}
