@@ -1,3 +1,10 @@
+# 종목별 파라미터 오버라이드 (per_symbol_params.py 결과: "메이저 공격" +0.22%p 알파)
+SYMBOL_OVERRIDES = {
+    "KRW-BTC": {"buy_score_threshold": 4, "resistance_filter_pct": 2.0},
+    "KRW-ETH": {"buy_score_threshold": 4, "resistance_filter_pct": 2.0},
+}
+
+
 DEFAULT_PARAMS = {
     # 차단 필터 (None 또는 0이면 끔)
     # 90일 4종목 sell_threshold_test 결과: "매도신호 무시 + TP=15%" 조합이 +2.18% (최적)
@@ -7,7 +14,7 @@ DEFAULT_PARAMS = {
 
     # 임계값
     "buy_score_threshold": 5,        # 매수: 강한 신호만 (이전 4 → 5)
-    "sell_score_threshold": 99,      # 매도 신호 사실상 무시 → TP/SL로만 종료
+    "sell_score_threshold": 7,       # 강한 매도 신호만 듣기 (sell_threshold_dual.py 결과 sell=7 최선)
 
     # 가중치 (튜닝 가능)
     "w_rsi_strong_oversold": 3,      # RSI < 30
@@ -19,6 +26,7 @@ DEFAULT_PARAMS = {
     "w_bb_lower_zone": 1,            # pct_b < 0.2
     "w_bb_above_upper": -2,
     "w_trend_up": 2,
+    "w_trend_strong_up": 3,          # EMA5 > EMA20 > EMA60 + 가격 > EMA20 5% 이상
     "w_volume_surge_trending": 2,    # 추세장 + 거래량 2배 이상
     "w_volume_increase": 1,          # 거래량 1.5배 이상 + score>0
     "w_support_near": 1,
@@ -29,9 +37,12 @@ class RuleBasedDecisionMaker:
     """개선된 규칙 기반 전략 - 추세 필터 + 가중치 + 변동성 반영"""
 
     def __init__(self, params: dict = None):
-        self.p = {**DEFAULT_PARAMS, **(params or {})}
+        self._base_p = {**DEFAULT_PARAMS, **(params or {})}
+        self.p = self._base_p  # decide() 시작 시 종목별로 재설정
 
     def decide(self, symbol: str, market_type: str, indicators: dict, position: dict = None) -> dict:
+        # 종목별 오버라이드 적용
+        self.p = {**self._base_p, **SYMBOL_OVERRIDES.get(symbol, {})}
         rsi = indicators.get("rsi", {})
         macd = indicators.get("macd", {})
         bb = indicators.get("bollinger", {})
@@ -56,7 +67,8 @@ class RuleBasedDecisionMaker:
         if not position or position.get("volume", 0) == 0:
             return self._buy_decision(
                 rsi_val, direction, macd, bb_pos, pct_b,
-                vol_ratio, sr, is_trending, is_volatile, symbol
+                vol_ratio, sr, is_trending, is_volatile, symbol,
+                trend, indicators.get("current_price", 0)
             )
 
         # ── 3. 매도 조건 (보유 중일 때) ───────────────────
@@ -67,7 +79,8 @@ class RuleBasedDecisionMaker:
             )
 
     def _buy_decision(self, rsi_val, direction, macd, bb_pos, pct_b,
-                      vol_ratio, sr, is_trending, is_volatile, symbol):
+                      vol_ratio, sr, is_trending, is_volatile, symbol,
+                      trend=None, current_price=0):
         reasons = []
         score = 0
         p = self.p
@@ -120,10 +133,21 @@ class RuleBasedDecisionMaker:
         elif bb_pos == "above_upper":
             score += p["w_bb_above_upper"]
 
-        # 추세
+        # 추세 (강한 상승은 추가 가중치)
         if direction == "up":
-            score += p["w_trend_up"]
-            reasons.append("상승추세")
+            # EMA5/EMA20/EMA60 정렬 + 가격이 EMA20 보다 5% 이상 위면 "강한" 상승
+            ema20 = (trend or {}).get("ema20", 0)
+            strong_up = (
+                ema20 > 0 and current_price > ema20 * 1.05
+                and (trend or {}).get("ema5", 0) > ema20
+                and ema20 > (trend or {}).get("ema60", 0)
+            )
+            if strong_up:
+                score += p["w_trend_strong_up"]
+                reasons.append("강한 상승추세")
+            else:
+                score += p["w_trend_up"]
+                reasons.append("상승추세")
         elif direction == "down" and rsi_val < 30:
             reasons.append("하락추세+극과매도(반등 주의)")
 
@@ -193,7 +217,15 @@ class RuleBasedDecisionMaker:
         threshold = self.p["buy_score_threshold"]
         if score >= threshold:
             confidence = min(score / 8.0, 0.9)
-            pct = 0.20 if score >= threshold + 2 else 0.15
+            # 신호 강도별 4단계
+            if score >= threshold + 3:
+                pct = 0.25
+            elif score >= threshold + 2:
+                pct = 0.20
+            elif score >= threshold + 1:
+                pct = 0.17
+            else:
+                pct = 0.15
             return {"action": "buy", "confidence": round(confidence, 2),
                     "reason": reason_str, "risk_level": "low" if score >= threshold + 2 else "medium",
                     "suggested_position_pct": pct}

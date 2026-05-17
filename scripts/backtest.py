@@ -50,12 +50,15 @@ def fetch_stock(symbol: str, count: int) -> pd.DataFrame:
 
 
 def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict,
-                 rule_params: dict = None):
+                 rule_params: dict = None, daily_df: pd.DataFrame = None):
     analyzer = TechnicalAnalyzer()
     rule = RuleBasedDecisionMaker(rule_params)
     # 익절/손절 동적 오버라이드
     stop_loss_pct = params.get("stop_loss_pct", RISK["stop_loss_pct"])
     take_profit_pct = params.get("take_profit_pct", RISK["take_profit_pct"])
+    trailing_pct = params.get("trailing_pct")   # None이면 트레일링 OFF
+    # 다중 타임프레임: 일봉 추세 ↓이면 매수 차단
+    use_daily_filter = params.get("daily_trend_filter", False) and daily_df is not None
 
     krw = INITIAL_KRW
     position = None   # {"volume", "avg_price", "entry_idx"}
@@ -79,16 +82,34 @@ def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict,
                 "profit_pct": profit_pct,
             }
 
-        # 손절/익절 우선
+        # 손절/익절/트레일링 우선
         if position:
             profit_pct = (price - position["avg_price"]) / position["avg_price"]
+            # peak 추적
+            position["peak_price"] = max(position.get("peak_price", position["avg_price"]), price)
+            position["activated_trailing"] = (
+                position.get("activated_trailing")
+                or profit_pct >= take_profit_pct
+            )
+
             if profit_pct <= -stop_loss_pct:
                 _close(position, price, "손절", trades, i)
                 krw += position["volume"] * price * (1 - FEE)
                 position = None
                 equity_curve.append((i, krw))
                 continue
-            if profit_pct >= take_profit_pct:
+
+            if trailing_pct and position["activated_trailing"]:
+                # 익절 도달 후 peak 추적, peak에서 trailing_pct 떨어지면 매도
+                drawdown = (price - position["peak_price"]) / position["peak_price"]
+                if drawdown <= -trailing_pct:
+                    _close(position, price, f"트레일링 (peak {position['peak_price']:.0f})", trades, i)
+                    krw += position["volume"] * price * (1 - FEE)
+                    position = None
+                    equity_curve.append((i, krw))
+                    continue
+            elif not trailing_pct and profit_pct >= take_profit_pct:
+                # 트레일링 OFF인 경우 기존 익절 매도
                 _close(position, price, "익절", trades, i)
                 krw += position["volume"] * price * (1 - FEE)
                 position = None
@@ -103,7 +124,23 @@ def run_backtest(df: pd.DataFrame, symbol: str, market_type: str, params: dict,
             continue
 
         if action == "buy" and position is None:
-            position_pct = params.get("position_pct", 0.20)
+            # 다중 타임프레임: 일봉 추세 하향이면 매수 차단
+            if use_daily_filter:
+                ts = df.index[i] if hasattr(df.index, "__getitem__") else None
+                if ts is not None:
+                    daily_up_to = daily_df[daily_df.index <= ts].tail(70)
+                    if len(daily_up_to) >= 60:
+                        ema20 = daily_up_to["close"].ewm(span=20).mean().iloc[-1]
+                        ema60 = daily_up_to["close"].ewm(span=60).mean().iloc[-1]
+                        if ema20 < ema60:
+                            equity_curve.append((i, _equity(krw, position, price)))
+                            continue
+            # 신호 강도별 포지션 사이즈 — decision.suggested_position_pct 우선, 없으면 params 기본
+            suggested = decision.get("suggested_position_pct")
+            if params.get("use_signal_size") and suggested:
+                position_pct = suggested
+            else:
+                position_pct = params.get("position_pct", 0.20)
             cap = params.get("cap_krw")   # None이면 캡 없음 (백테스트 기본)
             amount = krw * position_pct
             if cap:
